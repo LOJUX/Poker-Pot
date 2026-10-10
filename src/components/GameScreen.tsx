@@ -7,6 +7,8 @@ import { ActionBar } from './ActionBar';
 import { ShowdownPanel } from './ShowdownPanel';
 import { HandSummary } from './HandSummary';
 import { PlayersPanel } from './PlayersPanel';
+import { AddSeat } from './AddSeat';
+import { NewGameDialog } from './NewGameDialog';
 
 interface Props {
   game: GameState;
@@ -14,14 +16,17 @@ interface Props {
   undo: () => void;
   canUndo: boolean;
   error: string | null;
-  onEndGame: () => void;
+  onNewGame: (samePlayers: boolean) => void;
 }
 
 const STREET_LABEL = { preflop: 'Pre-flop', flop: 'Flop', turn: 'Turn', river: 'River' } as const;
 const DEAL_LABEL = { preflop: 'Deal the flop', flop: 'Deal the turn', turn: 'Deal the river', river: '' } as const;
 
-export function GameScreen({ game, dispatch, undo, canUndo, error, onEndGame }: Props) {
+export function GameScreen({ game, dispatch, undo, canUndo, error, onNewGame }: Props) {
   const [showPlayers, setShowPlayers] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showNewGame, setShowNewGame] = useState(false);
+  const [addingSeat, setAddingSeat] = useState<number | null>(null);
   const hand = game.hand;
   const fmt = (n: number) => formatAmount(game.config, n);
   const inHand = handInProgress(game);
@@ -38,9 +43,38 @@ export function GameScreen({ game, dispatch, undo, canUndo, error, onEndGame }: 
           Blinds {fmt(game.config.smallBlind)}/{fmt(game.config.bigBlind)}
           {hand && ` · Hand #${hand.number}`}
         </span>
-        <button onClick={() => setShowPlayers(true)} disabled={inHand}>
-          Players
-        </button>
+        <div className="menu">
+          <button onClick={() => setShowMenu(!showMenu)} aria-expanded={showMenu}>
+            Menu ▾
+          </button>
+          {showMenu && (
+            <>
+              <div className="menu-dismiss" onClick={() => setShowMenu(false)} />
+              <div className="menu-items" role="menu">
+                <button
+                  role="menuitem"
+                  disabled={inHand}
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowPlayers(true);
+                  }}
+                >
+                  Players &amp; rebuys
+                  {inHand && <small className="muted">After this hand</small>}
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowNewGame(true);
+                  }}
+                >
+                  New game…
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </header>
 
       <TableLayout
@@ -61,10 +95,19 @@ export function GameScreen({ game, dispatch, undo, canUndo, error, onEndGame }: 
         }
         renderSeat={(seat) => {
           const p = game.players.find((x) => x.seat === seat);
-          if (!p) return null;
+          if (!p) {
+            if (addingSeat === seat) {
+              return <AddSeat game={game} seat={seat} dispatch={dispatch} onDone={() => setAddingSeat(null)} />;
+            }
+            return (
+              <button className="seat-add" onClick={() => setAddingSeat(seat)} aria-label={`Add a player to seat ${seat + 1}`}>
+                +
+              </button>
+            );
+          }
           const live = hand && inHand && p.inHand;
           const status = !p.inHand && inHand
-            ? p.stack === 0 ? 'Bust' : p.sittingOut ? 'Sitting out' : 'Out'
+            ? p.stack === 0 ? 'Bust' : p.sittingOut ? 'Sitting out' : 'Next hand'
             : !inHand && p.sittingOut ? 'Sitting out'
             : !inHand && p.stack === 0 ? 'Bust'
             : live && p.folded ? 'Folded'
@@ -76,7 +119,7 @@ export function GameScreen({ game, dispatch, undo, canUndo, error, onEndGame }: 
                 'seat',
                 p.id === acting?.id ? 'acting' : '',
                 live && p.folded ? 'folded' : '',
-                status === 'Bust' || status === 'Out' || status === 'Sitting out' ? 'inactive' : '',
+                status === 'Bust' || status === 'Next hand' || status === 'Sitting out' ? 'inactive' : '',
               ].join(' ')}
             >
               <div className="seat-main">
@@ -129,8 +172,10 @@ export function GameScreen({ game, dispatch, undo, canUndo, error, onEndGame }: 
       )}
 
       {showPlayers && (
-        <PlayersPanel game={game} dispatch={dispatch} onClose={() => setShowPlayers(false)} onEndGame={onEndGame} />
+        <PlayersPanel game={game} dispatch={dispatch} onClose={() => setShowPlayers(false)} />
       )}
+
+      {showNewGame && <NewGameDialog game={game} onCancel={() => setShowNewGame(false)} onNewGame={onNewGame} />}
     </div>
   );
 }

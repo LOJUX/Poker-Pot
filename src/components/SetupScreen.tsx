@@ -1,23 +1,34 @@
 import { useState } from 'react';
 import { createGame } from '../engine/game';
-import type { GameState } from '../engine/types';
+import type { Config, GameState } from '../engine/types';
 import { TableLayout } from './TableLayout';
-import { checkBlinds, parseAmount } from '../money';
+import { checkBlinds, parseAmount, toInput } from '../money';
 
 const MONEY_DEFAULTS = { sb: '0.10', bb: '0.20', buyIn: '20' };
 const CHIP_DEFAULTS = { sb: '5', bb: '10', buyIn: '1000' };
 
-interface Props {
-  onStart: (game: GameState) => void;
+/** Settings and seating carried over from a previous game. */
+export interface SetupPrefill {
+  config: Config;
+  players: { name: string; seat: number }[];
 }
 
-export function SetupScreen({ onStart }: Props) {
-  const [maxSeats, setMaxSeats] = useState(8);
-  const [currency, setCurrency] = useState('£');
-  const [smallBlind, setSmallBlind] = useState(MONEY_DEFAULTS.sb);
-  const [bigBlind, setBigBlind] = useState(MONEY_DEFAULTS.bb);
-  const [buyIn, setBuyIn] = useState(MONEY_DEFAULTS.buyIn);
-  const [names, setNames] = useState<Record<number, string>>({});
+interface Props {
+  onStart: (game: GameState) => void;
+  prefill?: SetupPrefill | null;
+}
+
+export function SetupScreen({ onStart, prefill }: Props) {
+  const pc = prefill?.config;
+  const asInput = (n: number) => toInput(n, pc!.unitScale);
+  const [maxSeats, setMaxSeats] = useState(pc?.maxSeats ?? 8);
+  const [currency, setCurrency] = useState(pc?.currency ?? '£');
+  const [smallBlind, setSmallBlind] = useState(pc ? asInput(pc.smallBlind) : MONEY_DEFAULTS.sb);
+  const [bigBlind, setBigBlind] = useState(pc ? asInput(pc.bigBlind) : MONEY_DEFAULTS.bb);
+  const [buyIn, setBuyIn] = useState(pc ? asInput(pc.defaultBuyIn ?? pc.bigBlind * 100) : MONEY_DEFAULTS.buyIn);
+  const [names, setNames] = useState<Record<number, string>>(() =>
+    Object.fromEntries((prefill?.players ?? []).map((p) => [p.seat, p.name])),
+  );
   const [stacks, setStacks] = useState<Record<number, string>>({});
   const [button, setButton] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
@@ -56,7 +67,8 @@ export function SetupScreen({ onStart }: Props) {
         button != null && seated.some((p) => p.seat === button)
           ? button
           : seated[Math.floor(Math.random() * seated.length)].seat;
-      onStart(createGame({ maxSeats, smallBlind: sb, bigBlind: bb, currency, unitScale }, players, btn));
+      const defaultBuyIn = parseAmount(buyIn, unitScale);
+      onStart(createGame({ maxSeats, smallBlind: sb, bigBlind: bb, currency, unitScale, defaultBuyIn }, players, btn));
     } catch (e) {
       setError((e as Error).message);
     }

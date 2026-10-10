@@ -22,7 +22,9 @@ Open it on a tablet in the middle of the table and use "Add to Home Screen" to i
    - **Everyone else folds**: the last player gets the pot automatically, and any uncalled bet is returned.
    - **Everyone is all-in**: betting stops and the app asks you to run out the board.
    - **Showdown**: the app builds the main pot and side pots itself and lists only the players eligible for each one. Tap the winner of each pot (or use "Best hand" to give one player every pot they're eligible for). Tap several players to split a pot. Odd chips go to the first winner left of the button.
-5. **Between hands**: use **Players** to rebuy, sit out, add or remove players, move the button or change the blinds. It also shows each player's +/− against their total buy-in. **Undo** reverses any mis-tap.
+5. **Joining mid-game**: tap the faint **+** on an empty seat to sit a new player down at any time. They're dealt in from the next hand.
+6. **Between hands**: use **Menu → Players & rebuys** to rebuy, sit out, add or remove players, move the button or change the blinds. It also shows each player's +/− against their total buy-in. **Undo** reverses any mis-tap.
+7. **New game**: **Menu → New game** shows final standings, then starts over with the same players and settings, or with an empty table.
 
 ## Code layout
 

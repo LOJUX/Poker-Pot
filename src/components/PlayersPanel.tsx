@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { GameAction, GameState } from '../engine/types';
-import { formatAmount } from '../engine/game';
+import { defaultBuyIn, formatAmount } from '../engine/game';
 import { freeSeats } from '../engine/table';
 import { checkBlinds, parseAmount, toInput } from '../money';
 
@@ -8,20 +8,18 @@ interface Props {
   game: GameState;
   dispatch: (a: GameAction) => void;
   onClose: () => void;
-  onEndGame: () => void;
 }
 
-export function PlayersPanel({ game, dispatch, onClose, onEndGame }: Props) {
+export function PlayersPanel({ game, dispatch, onClose }: Props) {
   const { config } = game;
   const fmt = (n: number) => formatAmount(config, n);
   const [rebuy, setRebuy] = useState<Record<string, string>>({});
   const [newName, setNewName] = useState('');
   const [newSeat, setNewSeat] = useState<number | ''>(freeSeats(game)[0] ?? '');
-  const [newStack, setNewStack] = useState('');
+  const [newStack, setNewStack] = useState(toInput(defaultBuyIn(config), config.unitScale));
   const [sb, setSb] = useState(toInput(config.smallBlind, config.unitScale));
   const [bb, setBb] = useState(toInput(config.bigBlind, config.unitScale));
   const [error, setError] = useState<string | null>(null);
-  const [confirmEnd, setConfirmEnd] = useState(false);
 
   const safely = (fn: () => void) => {
     try {
@@ -33,6 +31,9 @@ export function PlayersPanel({ game, dispatch, onClose, onEndGame }: Props) {
   };
 
   const players = [...game.players].sort((a, b) => a.seat - b.seat);
+  // The chosen seat may have just been filled; fall back to the first free one.
+  const free = freeSeats(game);
+  const seatChoice: number | null = newSeat !== '' && free.includes(newSeat) ? newSeat : free.length ? free[0] : null;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -100,7 +101,7 @@ export function PlayersPanel({ game, dispatch, onClose, onEndGame }: Props) {
         <h3>Add player</h3>
         <div className="inline-form">
           <input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-          <select value={newSeat} onChange={(e) => setNewSeat(Number(e.target.value))}>
+          <select value={seatChoice ?? ''} onChange={(e) => setNewSeat(Number(e.target.value))}>
             {freeSeats(game).map((s) => (
               <option key={s} value={s}>
                 Seat {s + 1}
@@ -109,17 +110,16 @@ export function PlayersPanel({ game, dispatch, onClose, onEndGame }: Props) {
           </select>
           <input inputMode="decimal" placeholder="Stack" value={newStack} onChange={(e) => setNewStack(e.target.value)} />
           <button
-            disabled={!newName.trim() || newSeat === ''}
+            disabled={!newName.trim() || seatChoice === null}
             onClick={() =>
               safely(() => {
                 dispatch({
                   type: 'ADD_PLAYER',
                   name: newName.trim(),
-                  seat: Number(newSeat),
+                  seat: Number(seatChoice),
                   stack: parseAmount(newStack, config.unitScale),
                 });
                 setNewName('');
-                setNewStack('');
               })
             }
           >
@@ -148,9 +148,6 @@ export function PlayersPanel({ game, dispatch, onClose, onEndGame }: Props) {
 
         {error && <p className="error">{error}</p>}
 
-        <button className={`danger wide ${confirmEnd ? 'confirm' : ''}`} onClick={() => (confirmEnd ? onEndGame() : setConfirmEnd(true))}>
-          {confirmEnd ? 'Tap again to end the game' : 'End game'}
-        </button>
       </div>
     </div>
   );

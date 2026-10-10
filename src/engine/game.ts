@@ -32,6 +32,11 @@ export function formatAmount(config: Config, amount: number): string {
   })}`;
 }
 
+/** Suggested stack for a new player: the configured buy-in, or 100 big blinds for older saved games. */
+export function defaultBuyIn(config: Config): number {
+  return config.defaultBuyIn ?? config.bigBlind * 100;
+}
+
 export function handInProgress(state: GameState): boolean {
   return !!state.hand && state.hand.phase !== 'complete';
 }
@@ -53,7 +58,7 @@ export function reduce(prev: GameState, action: GameAction): GameState {
       awardPots(state, action.winners);
       break;
     case 'ADD_PLAYER':
-      betweenHands(state);
+      // Allowed mid-hand: the new player isn't dealt in until the next hand.
       addPlayer(state, action);
       break;
     case 'REMOVE_PLAYER':
@@ -90,6 +95,8 @@ function betweenHands(state: GameState) {
 }
 
 function addPlayer(state: GameState, np: NewPlayer) {
+  if (!np.name.trim()) throw new Error('Enter a name');
+  if (!(np.stack > 0)) throw new Error('Stack must be more than zero');
   if (np.seat < 0 || np.seat >= state.config.maxSeats) throw new Error('Invalid seat');
   if (state.players.some((p) => p.seat === np.seat)) throw new Error('Seat is taken');
   state.players.push({

@@ -243,3 +243,33 @@ describe('side pots', () => {
     expect(s.hand!.result!.refund).toEqual({ playerId: id(s, 'B'), amount: 3 });
   });
 });
+
+describe('adding players', () => {
+  it('seats a player mid-hand without dealing them in until the next hand', () => {
+    let s = game([
+      { name: 'A', seat: 0, stack: 1000 },
+      { name: 'B', seat: 1, stack: 1000 },
+      { name: 'C', seat: 2, stack: 1000 },
+    ]);
+    const before = s.hand!.actingId;
+    s = reduce(s, { type: 'ADD_PLAYER', name: 'E', seat: 5, stack: 500 });
+    const e = s.players.find((p) => p.name === 'E')!;
+    expect(e.inHand).toBe(false);
+    expect(s.hand!.actingId).toBe(before);
+    s = run(s, fold, fold); // A and B fold to C
+    expect(s.hand!.phase).toBe('complete');
+    expect(stack(s, 'E')).toBe(500);
+    s = run(s, { type: 'START_HAND' });
+    expect(s.players.find((p) => p.name === 'E')!.inHand).toBe(true);
+  });
+
+  it('rejects a taken seat, a blank name and an empty stack', () => {
+    const s = game([
+      { name: 'A', seat: 0, stack: 1000 },
+      { name: 'B', seat: 1, stack: 1000 },
+    ]);
+    expect(() => reduce(s, { type: 'ADD_PLAYER', name: 'X', seat: 1, stack: 100 })).toThrow(/taken/);
+    expect(() => reduce(s, { type: 'ADD_PLAYER', name: ' ', seat: 4, stack: 100 })).toThrow(/name/);
+    expect(() => reduce(s, { type: 'ADD_PLAYER', name: 'X', seat: 4, stack: 0 })).toThrow(/Stack/);
+  });
+});

@@ -10,6 +10,8 @@ export interface Config {
   currency: string;
   /** Number of minor units per major unit (100 for money, 1 for chips). */
   unitScale: number;
+  /** Suggested stack for new players, in minor units. Missing in games saved by older versions. */
+  defaultBuyIn?: number;
 }
 
 export interface Player {
