@@ -131,20 +131,22 @@ function commit(p: Player, amount: number) {
 // ---------------------------------------------------------------------------
 // Hand lifecycle
 
+/** Seat that will get the button when the next hand starts, or null if fewer than two players can play. */
+export function nextButtonSeat(state: GameState): number | null {
+  const dealt = state.players.filter(eligibleForHand);
+  if (dealt.length < 2) return null;
+  const anchor = state.buttonSeat ?? 0;
+  const atAnchor = state.moveButton ? undefined : dealt.find((p) => p.seat === anchor);
+  return (atAnchor ?? nextSeated(dealt, anchor, state.config.maxSeats, () => true)!).seat;
+}
+
 function startHand(state: GameState) {
   betweenHands(state);
   const { maxSeats, smallBlind, bigBlind } = state.config;
   const dealt = state.players.filter(eligibleForHand);
   if (dealt.length < 2) throw new Error('Need at least two players with chips');
 
-  // Move the button.
-  const anchor = state.buttonSeat ?? 0;
-  let button: Player;
-  if (!state.moveButton) {
-    button = dealt.find((p) => p.seat === anchor) ?? nextSeated(dealt, anchor, maxSeats, () => true)!;
-  } else {
-    button = nextSeated(dealt, anchor, maxSeats, () => true)!;
-  }
+  const button = dealt.find((p) => p.seat === nextButtonSeat(state))!;
   state.buttonSeat = button.seat;
   state.moveButton = true;
 

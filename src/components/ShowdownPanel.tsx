@@ -32,17 +32,21 @@ export function ShowdownPanel({ game, dispatch }: Props) {
 
   return (
     <div className="showdown">
-      <h2>Showdown</h2>
-      {hand.allInRunout && <p className="muted">Everyone's all-in — deal the rest of the board, then pick the winners.</p>}
-
-      <div className="quick">
-        <span className="muted">Best hand:</span>
-        {contenders.map((id) => (
-          <button key={id} onClick={() => bestHand(id)}>
-            {name(id)}
-          </button>
-        ))}
+      <div className="panel-title">
+        <h2>Who won?</h2>
       </div>
+      {hand.allInRunout && <p className="muted">Everyone's all-in: deal the rest of the board, then pick the winners.</p>}
+
+      {pots.length > 1 && (
+        <div className="quick">
+          <span className="muted">Best hand:</span>
+          {contenders.map((id) => (
+            <button key={id} onClick={() => bestHand(id)}>
+              {name(id)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {pots.map((pot, i) => (
         <div key={i} className="pot-pick">
@@ -50,7 +54,7 @@ export function ShowdownPanel({ game, dispatch }: Props) {
             {pots.length === 1 ? 'Pot' : i === 0 ? 'Main pot' : `Side pot ${i}`} · {fmt(pot.amount)}
             {winners[i].length > 1 && <span className="muted"> · split {winners[i].length} ways</span>}
           </div>
-          <div className="chips">
+          <div className="picks">
             {pot.eligible.map((id) => (
               <button
                 key={id}
@@ -65,7 +69,7 @@ export function ShowdownPanel({ game, dispatch }: Props) {
         </div>
       ))}
 
-      <p className="muted">Tap more than one player to split a pot.</p>
+      <p className="muted small">Tap more than one player to split a pot.</p>
       <button className="primary big" disabled={!ready} onClick={() => dispatch({ type: 'AWARD_POTS', winners })}>
         Pay out
       </button>

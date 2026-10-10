@@ -1,7 +1,11 @@
-import { useState } from 'react';
-import { createGame } from '../engine/game';
+import { useRef, useState } from 'react';
+import { createGame, formatAmount } from '../engine/game';
 import type { Config, GameState } from '../engine/types';
-import { TableLayout } from './TableLayout';
+import { SEAT_INSET, seatGeometry } from '../layout/geometry';
+import { useElementSize } from '../hooks';
+import { EmptySeat, Seat } from './Seat';
+import { chipUnit } from './ChipStack';
+import { Modal } from './Modal';
 import { checkBlinds, parseAmount, toInput } from '../money';
 
 const MONEY_DEFAULTS = { sb: '0.10', bb: '0.20', buyIn: '20' };
@@ -32,12 +36,49 @@ export function SetupScreen({ onStart, prefill }: Props) {
   const [stacks, setStacks] = useState<Record<number, string>>({});
   const [button, setButton] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const { w, h } = useElementSize(ref);
 
   const unitScale = currency ? 100 : 1;
   const seated = Object.entries(names)
     .map(([seat, name]) => ({ seat: Number(seat), name: name.trim() }))
     .filter((p) => p.name && p.seat < maxSeats);
+
+  // Best-effort config for previewing amounts and chips while fields are being edited.
+  const safe = (text: string, fallback: number) => {
+    try {
+      return parseAmount(text, unitScale);
+    } catch {
+      return fallback;
+    }
+  };
+  const preview: Config = {
+    maxSeats,
+    currency,
+    unitScale,
+    smallBlind: safe(smallBlind, 0),
+    bigBlind: safe(bigBlind, 0),
+    defaultBuyIn: safe(buyIn, 100 * unitScale),
+  };
+  const fmt = (n: number) => formatAmount(preview, n);
+  const unit = chipUnit(preview);
+  const stackOf = (seat: number) => safe(stacks[seat] || buyIn, 0);
+
+  function closeEditor() {
+    if (editing != null && !names[editing]?.trim()) removeSeat(editing);
+    setEditing(null);
+  }
+
+  function removeSeat(seat: number) {
+    const { [seat]: _n, ...restNames } = names;
+    const { [seat]: _s, ...restStacks } = stacks;
+    setNames(restNames);
+    setStacks(restStacks);
+    if (button === seat) setButton(null);
+    setEditing(null);
+  }
 
   /** Switching between money and chips swaps in sensible defaults for any field still on the old default. */
   function changeCurrency(next: string) {
@@ -75,92 +116,125 @@ export function SetupScreen({ onStart, prefill }: Props) {
   }
 
   return (
-    <div className="setup">
-      <h1>Poker Pot</h1>
-      <p className="muted">Tap a seat to add a player where they're sitting. Tap “D” to choose the first dealer.</p>
-
-      <div className="setup-grid">
-        <label>
-          Seats
-          <select value={maxSeats} onChange={(e) => setMaxSeats(Number(e.target.value))}>
-            {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-              <option key={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Currency
-          <select value={currency} onChange={(e) => changeCurrency(e.target.value)}>
-            <option value="£">£</option>
-            <option value="$">$</option>
-            <option value="€">€</option>
-            <option value="">Chips</option>
-          </select>
-        </label>
-        <label>
-          Small blind
-          <input inputMode="decimal" value={smallBlind} onChange={(e) => setSmallBlind(e.target.value)} />
-        </label>
-        <label>
-          Big blind
-          <input inputMode="decimal" value={bigBlind} onChange={(e) => setBigBlind(e.target.value)} />
-        </label>
-        <label>
-          Default buy-in
-          <input inputMode="decimal" value={buyIn} onChange={(e) => setBuyIn(e.target.value)} />
-        </label>
-      </div>
-
-      <TableLayout
-        maxSeats={maxSeats}
-        center={<span className="muted">{seated.length} player{seated.length === 1 ? '' : 's'}</span>}
-        renderSeat={(seat) => {
+    <div className="arena" ref={ref}>
+      {w > 0 &&
+        Array.from({ length: maxSeats }, (_, seat) => {
+          const g = seatGeometry(seat, maxSeats, w, h, SEAT_INSET);
           const name = names[seat]?.trim();
-          if (editing === seat) {
-            return (
-              <div className="seat seat-edit">
-                <input
-                  autoFocus
-                  placeholder="Name"
-                  value={names[seat] ?? ''}
-                  onChange={(e) => setNames({ ...names, [seat]: e.target.value })}
-                  onKeyDown={(e) => e.key === 'Enter' && setEditing(null)}
-                />
-                <input
-                  inputMode="decimal"
-                  placeholder={`Stack (${buyIn})`}
-                  value={stacks[seat] ?? ''}
-                  onChange={(e) => setStacks({ ...stacks, [seat]: e.target.value })}
-                  onKeyDown={(e) => e.key === 'Enter' && setEditing(null)}
-                />
-                <button onClick={() => setEditing(null)}>Done</button>
-              </div>
-            );
+          if (!name) {
+            return <EmptySeat key={seat} geom={g} onClick={() => setEditing(seat)} label={`Seat ${seat + 1}`} />;
           }
           return (
-            <div className={`seat ${name ? '' : 'seat-empty'}`}>
-              <button className="seat-main" onClick={() => setEditing(seat)}>
-                {name || `Seat ${seat + 1}`}
-                {name && <small>{currency}{stacks[seat] || buyIn}</small>}
-              </button>
-              {name && (
-                <button
-                  className={`badge badge-d ${button === seat ? 'on' : 'off'}`}
-                  onClick={() => setButton(seat)}
-                  title="Dealer"
-                >
-                  D
+            <Seat
+              key={seat}
+              geom={g}
+              name={name}
+              stack={stackOf(seat)}
+              unit={unit}
+              fmt={fmt}
+              onClick={() => setEditing(seat)}
+              tags={button === seat ? <span className="tag tag-d">D</span> : null}
+            />
+          );
+        })}
+
+      <div className="center setup-center">
+        <h1>Poker Pot</h1>
+        <p className="muted small">Lay the phone in the middle of the table. Tap the + nearest each player to seat them.</p>
+        <button className="settings-summary" onClick={() => setShowSettings(true)}>
+          {maxSeats} seats · {fmt(preview.smallBlind)}/{fmt(preview.bigBlind)} · {fmt(preview.defaultBuyIn!)} buy-in
+          <span className="muted"> ⚙</span>
+        </button>
+        {error && <p className="error small">{error}</p>}
+        <button className="primary big" onClick={start}>
+          Start{seated.length >= 2 && button == null ? ' · random dealer' : ''}
+        </button>
+      </div>
+
+      {editing != null && (
+        <Modal title={`Seat ${editing + 1}`} onClose={closeEditor} narrow>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              closeEditor();
+            }}
+          >
+            <label>
+              Name
+              <input autoFocus value={names[editing] ?? ''} onChange={(e) => setNames({ ...names, [editing]: e.target.value })} />
+            </label>
+            <label>
+              Stack
+              <input
+                inputMode="decimal"
+                placeholder={buyIn}
+                value={stacks[editing] ?? ''}
+                onChange={(e) => setStacks({ ...stacks, [editing]: e.target.value })}
+              />
+            </label>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={button === editing}
+                onChange={(e) => setButton(e.target.checked ? editing : null)}
+              />
+              Deals first
+            </label>
+            <div className="row">
+              {names[editing] !== undefined && (
+                <button type="button" className="danger" onClick={() => removeSeat(editing)}>
+                  Remove
                 </button>
               )}
+              <button className="primary grow" type="submit">
+                Done
+              </button>
             </div>
-          );
-        }}
-      />
+          </form>
+        </Modal>
+      )}
 
-      {error && <p className="error">{error}</p>}
-      <button className="primary big" onClick={start}>
-        Start game{button == null && seated.length >= 2 ? ' (random dealer)' : ''}
-      </button>
+      {showSettings && (
+        <Modal title="Game settings" onClose={() => setShowSettings(false)} narrow>
+          <div className="form">
+            <label>
+              Seats around the table
+              <select value={maxSeats} onChange={(e) => setMaxSeats(Number(e.target.value))}>
+                {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                  <option key={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Playing for
+              <select value={currency} onChange={(e) => changeCurrency(e.target.value)}>
+                <option value="£">£</option>
+                <option value="$">$</option>
+                <option value="€">€</option>
+                <option value="">Chips</option>
+              </select>
+            </label>
+            <div className="row">
+              <label>
+                Small blind
+                <input inputMode="decimal" value={smallBlind} onChange={(e) => setSmallBlind(e.target.value)} />
+              </label>
+              <label>
+                Big blind
+                <input inputMode="decimal" value={bigBlind} onChange={(e) => setBigBlind(e.target.value)} />
+              </label>
+            </div>
+            <label>
+              Default buy-in
+              <input inputMode="decimal" value={buyIn} onChange={(e) => setBuyIn(e.target.value)} />
+            </label>
+            <button className="primary big" onClick={() => setShowSettings(false)}>
+              Done
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

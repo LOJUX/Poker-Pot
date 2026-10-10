@@ -1,14 +1,20 @@
-import { useState } from 'react';
-import type { GameAction, GameState } from '../engine/types';
-import { formatAmount, handInProgress } from '../engine/game';
+import { Fragment, useRef, useState } from 'react';
+import type { GameAction, GameState, Player } from '../engine/types';
+import { formatAmount, handInProgress, nextButtonSeat } from '../engine/game';
 import { legalActions, totalPot } from '../engine/betting';
-import { TableLayout } from './TableLayout';
+import { SEAT_INSET, seatGeometry } from '../layout/geometry';
+import { enterFullscreen, useClockwise, useElementSize, useWakeLock } from '../hooks';
 import { ActionBar } from './ActionBar';
 import { ShowdownPanel } from './ShowdownPanel';
 import { HandSummary } from './HandSummary';
 import { PlayersPanel } from './PlayersPanel';
 import { AddSeat } from './AddSeat';
 import { NewGameDialog } from './NewGameDialog';
+import { ChipStack, chipUnit } from './ChipStack';
+import { BetMarker, EmptySeat, Seat } from './Seat';
+import { CenterPanel, EdgePanel } from './Facing';
+import { TurnArrow } from './TurnArrow';
+import { Modal } from './Modal';
 
 interface Props {
   game: GameState;
@@ -19,163 +25,197 @@ interface Props {
   onNewGame: (samePlayers: boolean) => void;
 }
 
+type Dialog = 'menu' | 'players' | 'history' | 'newGame' | null;
+
 const STREET_LABEL = { preflop: 'Pre-flop', flop: 'Flop', turn: 'Turn', river: 'River' } as const;
 const DEAL_LABEL = { preflop: 'Deal the flop', flop: 'Deal the turn', turn: 'Deal the river', river: '' } as const;
 
 export function GameScreen({ game, dispatch, undo, canUndo, error, onNewGame }: Props) {
-  const [showPlayers, setShowPlayers] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  const [showNewGame, setShowNewGame] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const { w, h } = useElementSize(ref);
+  useWakeLock(true);
+  const [dialog, setDialog] = useState<Dialog>(null);
   const [addingSeat, setAddingSeat] = useState<number | null>(null);
+
+  const { config } = game;
   const hand = game.hand;
-  const fmt = (n: number) => formatAmount(game.config, n);
+  const fmt = (n: number) => formatAmount(config, n);
+  const unit = chipUnit(config);
   const inHand = handInProgress(game);
-  const acting = hand?.actingId ? game.players.find((p) => p.id === hand.actingId) : null;
+  const between = !hand || hand.phase === 'complete';
+  const acting = hand?.actingId ? (game.players.find((p) => p.id === hand.actingId) ?? null) : null;
   const legal = legalActions(game);
+  const geom = (seat: number) => seatGeometry(seat, config.maxSeats, w, h, SEAT_INSET);
 
-  return (
-    <div className="game">
-      <header className="topbar">
-        <button onClick={undo} disabled={!canUndo}>
-          ↶ Undo
-        </button>
-        <span className="blinds">
-          Blinds {fmt(game.config.smallBlind)}/{fmt(game.config.bigBlind)}
-          {hand && ` · Hand #${hand.number}`}
-        </span>
-        <div className="menu">
-          <button onClick={() => setShowMenu(!showMenu)} aria-expanded={showMenu}>
-            Menu ▾
-          </button>
-          {showMenu && (
-            <>
-              <div className="menu-dismiss" onClick={() => setShowMenu(false)} />
-              <div className="menu-items" role="menu">
-                <button
-                  role="menuitem"
-                  disabled={inHand}
-                  onClick={() => {
-                    setShowMenu(false);
-                    setShowPlayers(true);
-                  }}
-                >
-                  Players &amp; rebuys
-                  {inHand && <small className="muted">After this hand</small>}
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setShowMenu(false);
-                    setShowNewGame(true);
-                  }}
-                >
-                  New game…
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </header>
+  // Between hands everything faces whoever deals next; during a hand, the player to act or the dealer.
+  const dealerSeat = between ? (nextButtonSeat(game) ?? game.buttonSeat) : hand!.buttonSeat;
+  const dealer = game.players.find((p) => p.seat === dealerSeat) ?? null;
+  const focusSeat = acting?.seat ?? dealerSeat ?? game.players[0]?.seat ?? 0;
+  const focus = geom(focusSeat);
+  const centerRot = useClockwise(focus.sideRot) ?? 0;
 
-      <TableLayout
-        maxSeats={game.config.maxSeats}
-        arrowSeat={acting?.seat ?? null}
-        center={
-          <div className="pot-display">
-            {hand && inHand && <div className="street">{STREET_LABEL[hand.street]}</div>}
-            {hand && inHand && hand.phase !== 'showdown' && <div className="pot">Pot {fmt(totalPot(game))}</div>}
-            {hand?.phase === 'showdown' &&
-              hand.pots.map((pot, i) => (
-                <div key={i} className="pot small">
-                  {i === 0 ? 'Main' : `Side ${i}`} {fmt(pot.amount)}
-                </div>
-              ))}
-            {acting && <div className="to-act">{acting.name} to act</div>}
+  function status(p: Player): string | null {
+    if (inHand && !p.inHand) return p.stack === 0 ? 'Bust' : p.sittingOut ? 'Sitting out' : 'Next hand';
+    if (!inHand && p.sittingOut) return 'Sitting out';
+    if (!inHand && p.stack === 0) return 'Bust';
+    if (inHand && p.folded) return 'Folded';
+    if (inHand && p.stack === 0) return 'All-in';
+    return null;
+  }
+
+  const tools = (
+    <>
+      <button className="icon" onClick={undo} disabled={!canUndo} aria-label="Undo">
+        ↶
+      </button>
+      <button className="icon" onClick={() => setDialog('menu')} aria-label="Menu">
+        ☰
+      </button>
+    </>
+  );
+
+  function panel() {
+    if (hand?.phase === 'betting' && acting && legal) {
+      return (
+        <EdgePanel seat={focus} w={w} h={h} tools={tools}>
+          <ActionBar key={`${hand.number}-${hand.log.length}`} game={game} player={acting} legal={legal} unit={unit} dispatch={dispatch} />
+        </EdgePanel>
+      );
+    }
+    if (hand?.phase === 'dealNext') {
+      return (
+        <EdgePanel seat={focus} w={w} h={h} tools={tools}>
+          <div className="panel-head">
+            <strong>{dealer?.name}</strong>
+            <span className="muted">is dealing</span>
           </div>
-        }
-        renderSeat={(seat) => {
-          const p = game.players.find((x) => x.seat === seat);
-          if (!p) {
-            if (addingSeat === seat) {
-              return <AddSeat game={game} seat={seat} dispatch={dispatch} onDone={() => setAddingSeat(null)} />;
-            }
-            return (
-              <button className="seat-add" onClick={() => setAddingSeat(seat)} aria-label={`Add a player to seat ${seat + 1}`}>
-                +
-              </button>
-            );
-          }
-          const live = hand && inHand && p.inHand;
-          const status = !p.inHand && inHand
-            ? p.stack === 0 ? 'Bust' : p.sittingOut ? 'Sitting out' : 'Next hand'
-            : !inHand && p.sittingOut ? 'Sitting out'
-            : !inHand && p.stack === 0 ? 'Bust'
-            : live && p.folded ? 'Folded'
-            : live && p.stack === 0 ? 'All-in'
-            : null;
-          return (
-            <div
-              className={[
-                'seat',
-                p.id === acting?.id ? 'acting' : '',
-                live && p.folded ? 'folded' : '',
-                status === 'Bust' || status === 'Next hand' || status === 'Sitting out' ? 'inactive' : '',
-              ].join(' ')}
-            >
-              <div className="seat-main">
-                <strong>{p.name}</strong>
-                <span className="stack">{fmt(p.stack)}</span>
-                {status && <small className="status">{status}</small>}
-              </div>
-              <div className="badges">
-                {hand && hand.buttonSeat === seat && <span className="badge badge-d">D</span>}
-                {hand && inHand && hand.sbSeat === seat && <span className="badge badge-sb">SB</span>}
-                {hand && inHand && hand.bbSeat === seat && <span className="badge badge-bb">BB</span>}
-              </div>
-              {live && p.streetCommitted > 0 && <div className="bet-chip">{fmt(p.streetCommitted)}</div>}
-            </div>
-          );
-        }}
-      />
-
-      {error && <p className="error">{error}</p>}
-
-      <section className="controls">
-        {(!hand || hand.phase === 'complete') && (
-          <>
-            {hand?.phase === 'complete' && <HandSummary game={game} />}
-            <button className="primary big" onClick={() => dispatch({ type: 'START_HAND' })}>
-              {hand ? 'Next hand' : 'Deal first hand'}
-            </button>
-          </>
-        )}
-        {hand?.phase === 'betting' && legal && acting && (
-          <ActionBar key={`${hand.number}-${hand.log.length}`} game={game} player={acting} legal={legal} dispatch={dispatch} />
-        )}
-        {hand?.phase === 'dealNext' && (
           <button className="primary big" onClick={() => dispatch({ type: 'DEAL_NEXT' })}>
             {DEAL_LABEL[hand.street]}
           </button>
+        </EdgePanel>
+      );
+    }
+    if (hand?.phase === 'showdown') {
+      return (
+        <CenterPanel seat={focus} w={w} h={h} tools={tools}>
+          <ShowdownPanel game={game} dispatch={dispatch} />
+        </CenterPanel>
+      );
+    }
+    return (
+      <EdgePanel seat={focus} w={w} h={h} tools={tools}>
+        {hand?.phase === 'complete' && <HandSummary game={game} />}
+        {dealer && nextButtonSeat(game) != null ? (
+          <>
+            <button className="primary big" onClick={() => dispatch({ type: 'START_HAND' })}>
+              {hand ? 'Next hand' : 'Deal first hand'}
+            </button>
+            <div className="muted small center-text">{dealer.name} deals</div>
+          </>
+        ) : (
+          <p className="muted small center-text">Need two players with chips. Open ☰ → Players to rebuy or add someone.</p>
         )}
-        {hand?.phase === 'showdown' && <ShowdownPanel game={game} dispatch={dispatch} />}
-      </section>
+      </EdgePanel>
+    );
+  }
 
-      {hand && hand.log.length > 0 && (
-        <details className="log">
-          <summary>Hand history</summary>
-          <ol>
+  const potTotal = inHand ? totalPot(game) : 0;
+  const showBets = hand?.phase === 'betting' || hand?.phase === 'dealNext';
+
+  return (
+    <div className="arena" ref={ref}>
+      {w > 0 && (
+        <>
+          {Array.from({ length: config.maxSeats }, (_, seat) => {
+            const g = geom(seat);
+            const p = game.players.find((x) => x.seat === seat);
+            if (!p) {
+              return <EmptySeat key={seat} geom={g} onClick={() => setAddingSeat(seat)} label={`Add a player to seat ${seat + 1}`} />;
+            }
+            const st = status(p);
+            return (
+              <Fragment key={seat}>
+                <Seat
+                  geom={g}
+                  name={p.name}
+                  stack={p.stack}
+                  unit={unit}
+                  fmt={fmt}
+                  status={st}
+                  className={[p.id === acting?.id ? 'acting' : '', st && st !== 'All-in' ? 'inactive' : ''].join(' ')}
+                  tags={
+                    <>
+                      {dealerSeat === seat && <span className="tag tag-d">D</span>}
+                      {inHand && hand!.sbSeat === seat && <span className="tag tag-sb">SB</span>}
+                      {inHand && hand!.bbSeat === seat && <span className="tag tag-bb">BB</span>}
+                    </>
+                  }
+                />
+                {showBets && p.inHand && p.streetCommitted > 0 && (
+                  <BetMarker geom={g} amount={p.streetCommitted} unit={unit} fmt={fmt} />
+                )}
+              </Fragment>
+            );
+          })}
+
+          <TurnArrow angle={focus.angle} muted={!acting} />
+
+          {hand?.phase !== 'showdown' && (
+            <div className="center" style={{ transform: `translate(-50%, -50%) rotate(${centerRot}deg)` }}>
+              {inHand ? (
+                <>
+                  <div className="street">{STREET_LABEL[hand!.street]}</div>
+                  <ChipStack amount={potTotal} unit={unit} />
+                  <div className="pot">{fmt(potTotal)}</div>
+                </>
+              ) : (
+                <div className="street">
+                  Blinds {fmt(config.smallBlind)}/{fmt(config.bigBlind)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {panel()}
+        </>
+      )}
+
+      {error && <div className="toast">{error}</div>}
+
+      {dialog === 'menu' && (
+        <Modal title="Menu" onClose={() => setDialog(null)} narrow>
+          <div className="menu-list">
+            <button disabled={inHand} onClick={() => setDialog('players')}>
+              Players &amp; rebuys
+              {inHand && <small className="muted">After this hand</small>}
+            </button>
+            <button disabled={!hand?.log.length} onClick={() => setDialog('history')}>
+              Hand history
+            </button>
+            <button
+              onClick={() => {
+                setDialog(null);
+                void enterFullscreen();
+              }}
+            >
+              Full screen
+            </button>
+            <button onClick={() => setDialog('newGame')}>New game…</button>
+          </div>
+        </Modal>
+      )}
+      {dialog === 'players' && <PlayersPanel game={game} dispatch={dispatch} onClose={() => setDialog(null)} />}
+      {dialog === 'history' && hand && (
+        <Modal title={`Hand #${hand.number}`} onClose={() => setDialog(null)} narrow>
+          <ol className="log">
             {hand.log.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
           </ol>
-        </details>
+        </Modal>
       )}
-
-      {showPlayers && (
-        <PlayersPanel game={game} dispatch={dispatch} onClose={() => setShowPlayers(false)} />
-      )}
-
-      {showNewGame && <NewGameDialog game={game} onCancel={() => setShowNewGame(false)} onNewGame={onNewGame} />}
+      {dialog === 'newGame' && <NewGameDialog game={game} onCancel={() => setDialog(null)} onNewGame={onNewGame} />}
+      {addingSeat != null && <AddSeat game={game} seat={addingSeat} dispatch={dispatch} onDone={() => setAddingSeat(null)} />}
     </div>
   );
 }
