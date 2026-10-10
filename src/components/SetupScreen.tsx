@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { createGame } from '../engine/game';
 import type { GameState } from '../engine/types';
 import { TableLayout } from './TableLayout';
-import { parseAmount } from '../money';
+import { checkBlinds, parseAmount } from '../money';
+
+const MONEY_DEFAULTS = { sb: '0.10', bb: '0.20', buyIn: '20' };
+const CHIP_DEFAULTS = { sb: '5', bb: '10', buyIn: '1000' };
 
 interface Props {
   onStart: (game: GameState) => void;
@@ -11,9 +14,9 @@ interface Props {
 export function SetupScreen({ onStart }: Props) {
   const [maxSeats, setMaxSeats] = useState(8);
   const [currency, setCurrency] = useState('£');
-  const [smallBlind, setSmallBlind] = useState('0.10');
-  const [bigBlind, setBigBlind] = useState('0.20');
-  const [buyIn, setBuyIn] = useState('20');
+  const [smallBlind, setSmallBlind] = useState(MONEY_DEFAULTS.sb);
+  const [bigBlind, setBigBlind] = useState(MONEY_DEFAULTS.bb);
+  const [buyIn, setBuyIn] = useState(MONEY_DEFAULTS.buyIn);
   const [names, setNames] = useState<Record<number, string>>({});
   const [stacks, setStacks] = useState<Record<number, string>>({});
   const [button, setButton] = useState<number | null>(null);
@@ -25,11 +28,23 @@ export function SetupScreen({ onStart }: Props) {
     .map(([seat, name]) => ({ seat: Number(seat), name: name.trim() }))
     .filter((p) => p.name && p.seat < maxSeats);
 
+  /** Switching between money and chips swaps in sensible defaults for any field still on the old default. */
+  function changeCurrency(next: string) {
+    const [from, to] = next ? [CHIP_DEFAULTS, MONEY_DEFAULTS] : [MONEY_DEFAULTS, CHIP_DEFAULTS];
+    if (!currency !== !next) {
+      if (smallBlind === from.sb) setSmallBlind(to.sb);
+      if (bigBlind === from.bb) setBigBlind(to.bb);
+      if (buyIn === from.buyIn) setBuyIn(to.buyIn);
+    }
+    setCurrency(next);
+    setError(null);
+  }
+
   function start() {
     try {
       const sb = parseAmount(smallBlind, unitScale);
       const bb = parseAmount(bigBlind, unitScale);
-      if (sb <= 0 || bb < sb) throw new Error('Big blind must be at least the small blind');
+      checkBlinds(sb, bb);
       if (seated.length < 2) throw new Error('Seat at least two players');
       const players = seated.map((p) => ({
         name: p.name,
@@ -63,7 +78,7 @@ export function SetupScreen({ onStart }: Props) {
         </label>
         <label>
           Currency
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
+          <select value={currency} onChange={(e) => changeCurrency(e.target.value)}>
             <option value="£">£</option>
             <option value="$">$</option>
             <option value="€">€</option>

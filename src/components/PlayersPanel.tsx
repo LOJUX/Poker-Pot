@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { GameAction, GameState } from '../engine/types';
 import { formatAmount } from '../engine/game';
 import { freeSeats } from '../engine/table';
-import { parseAmount, toInput } from '../money';
+import { checkBlinds, parseAmount, toInput } from '../money';
 
 interface Props {
   game: GameState;
@@ -137,7 +137,7 @@ export function PlayersPanel({ game, dispatch, onClose, onEndGame }: Props) {
               safely(() => {
                 const smallBlind = parseAmount(sb, config.unitScale);
                 const bigBlind = parseAmount(bb, config.unitScale);
-                if (smallBlind <= 0 || bigBlind < smallBlind) throw new Error('Big blind must be at least the small blind');
+                checkBlinds(smallBlind, bigBlind);
                 dispatch({ type: 'UPDATE_CONFIG', config: { smallBlind, bigBlind } });
               })
             }
