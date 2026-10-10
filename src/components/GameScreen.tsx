@@ -15,12 +15,15 @@ import { BetMarker, EmptySeat, Seat } from './Seat';
 import { CenterPanel, EdgePanel } from './Facing';
 import { TurnArrow } from './TurnArrow';
 import { Modal } from './Modal';
+import { ChipFlights } from './ChipFlights';
 
 interface Props {
   game: GameState;
   dispatch: (a: GameAction) => void;
   undo: () => void;
   canUndo: boolean;
+  /** Animate chips for this state change (false after undo or reload). */
+  animate: boolean;
   error: string | null;
   onNewGame: (samePlayers: boolean) => void;
 }
@@ -30,7 +33,7 @@ type Dialog = 'menu' | 'players' | 'history' | 'newGame' | null;
 const STREET_LABEL = { preflop: 'Pre-flop', flop: 'Flop', turn: 'Turn', river: 'River' } as const;
 const DEAL_LABEL = { preflop: 'Deal the flop', flop: 'Deal the turn', turn: 'Deal the river', river: '' } as const;
 
-export function GameScreen({ game, dispatch, undo, canUndo, error, onNewGame }: Props) {
+export function GameScreen({ game, dispatch, undo, canUndo, animate, error, onNewGame }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const { w, h } = useElementSize(ref);
   useWakeLock(true);
@@ -157,6 +160,8 @@ export function GameScreen({ game, dispatch, undo, canUndo, error, onNewGame }: 
               </Fragment>
             );
           })}
+
+          <ChipFlights game={game} animate={animate} geom={geom} w={w} h={h} unit={unit} fmt={fmt} />
 
           <TurnArrow angle={focus.angle} muted={!acting} />
 

@@ -25,6 +25,7 @@ export function App() {
       dispatch={store.dispatch}
       undo={store.undo}
       canUndo={store.canUndo}
+      animate={store.lastOp === 'act'}
       error={store.error}
       onNewGame={newGame}
     />

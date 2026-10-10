@@ -39,6 +39,13 @@ export function chipBreakdown(units: number): number[] {
   return counts;
 }
 
+/** Colour of the biggest chip in an amount, used for chips flying across the table. */
+export function chipColor(amount: number, unit: number): string {
+  const counts = chipBreakdown(amount / unit);
+  for (let i = counts.length - 1; i >= 0; i--) if (counts[i] > 0) return COLORS[i].fill;
+  return COLORS[0].fill;
+}
+
 interface Props {
   amount: number;
   unit: number;

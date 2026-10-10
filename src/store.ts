@@ -8,12 +8,14 @@ const MAX_HISTORY = 300;
 interface Saved {
   game: GameState | null;
   history: GameState[];
+  /** What produced the current state; only player actions animate chips. */
+  op?: 'act' | 'undo' | 'load';
 }
 
 function load(): Saved {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Saved;
+    if (raw) return { ...(JSON.parse(raw) as Saved), op: 'load' };
   } catch {
     // Corrupt or unavailable storage: start fresh.
   }
@@ -38,7 +40,7 @@ export function useGameStore() {
       try {
         const next = reduce(cur.game, action);
         setError(null);
-        return { game: next, history: [...cur.history, cur.game].slice(-MAX_HISTORY) };
+        return { game: next, history: [...cur.history, cur.game].slice(-MAX_HISTORY), op: 'act' };
       } catch (e) {
         setError((e as Error).message);
         return cur;
@@ -49,13 +51,15 @@ export function useGameStore() {
   const undo = useCallback(() => {
     setError(null);
     setSaved((cur) =>
-      cur.history.length ? { game: cur.history[cur.history.length - 1], history: cur.history.slice(0, -1) } : cur,
+      cur.history.length
+        ? { game: cur.history[cur.history.length - 1], history: cur.history.slice(0, -1), op: 'undo' }
+        : cur,
     );
   }, []);
 
   const startGame = useCallback((game: GameState) => {
     setError(null);
-    setSaved({ game, history: [] });
+    setSaved({ game, history: [], op: 'load' });
   }, []);
 
   const endGame = useCallback(() => {
@@ -66,6 +70,7 @@ export function useGameStore() {
   return {
     game: saved.game,
     canUndo: saved.history.length > 0,
+    lastOp: saved.op ?? 'load',
     error,
     clearError: () => setError(null),
     dispatch,

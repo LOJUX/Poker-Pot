@@ -48,15 +48,17 @@ export function EmptySeat({ geom, onClick, label }: { geom: SeatGeom; onClick: (
   );
 }
 
+/** How far in front of a seat (towards the centre) its bet is drawn, in px. */
+export const BET_OFFSET = 56;
+
 /** Chips a player has put in this betting round, just in front of their seat. */
 export function BetMarker({ geom, amount, unit, fmt }: { geom: SeatGeom; amount: number; unit: number; fmt: (n: number) => string }) {
-  const off = 56;
   return (
     <div
       className="bet"
       style={{
-        left: geom.x - geom.dx * off,
-        top: geom.y - geom.dy * off,
+        left: geom.x - geom.dx * BET_OFFSET,
+        top: geom.y - geom.dy * BET_OFFSET,
         transform: `translate(-50%, -50%) rotate(${geom.faceRot}deg)`,
       }}
     >
