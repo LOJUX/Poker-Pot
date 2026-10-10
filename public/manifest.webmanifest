@@ -1,0 +1,10 @@
+{
+  "name": "Poker Pot",
+  "short_name": "Poker Pot",
+  "description": "Chipless poker: stacks, blinds, betting and side pots on one device.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f1412",
+  "theme_color": "#0b3d2e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
